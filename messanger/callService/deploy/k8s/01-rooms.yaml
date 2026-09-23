@@ -1,0 +1,86 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rooms
+  namespace: callservice
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: rooms
+  template:
+    metadata:
+      labels:
+        app: rooms
+    spec:
+      containers:
+        - name: rooms
+          image: callservice/rooms:latest
+          ports:
+            - containerPort: 8080
+              name: grpc
+            - containerPort: 9090
+              name: metrics
+          envFrom:
+            - configMapRef:
+                name: callservice-config
+            - secretRef:
+                name: callservice-secrets
+          env:
+            - name: GRPC_HOST
+              value: "0.0.0.0"
+            - name: GRPC_PORT
+              value: "8080"
+            - name: METRICS_HOST
+              value: "0.0.0.0"
+            - name: METRICS_PORT
+              value: "9090"
+            - name: POSTGRES_HOST
+              value: postgres
+            - name: REDIS_HOST
+              value: redis
+            - name: KAFKA_BROKERS
+              value: kafka:9092
+          readinessProbe:
+            grpc:
+              port: 8080
+            initialDelaySeconds: 5
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: rooms
+  namespace: callservice
+spec:
+  selector:
+    app: rooms
+  ports:
+    - name: grpc
+      port: 8080
+      targetPort: 8080
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: rooms-ingress
+  namespace: callservice
+spec:
+  podSelector:
+    matchLabels:
+      app: rooms
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: signaling
+        - podSelector:
+            matchLabels:
+              app: sfu
+      ports:
+        - protocol: TCP
+          port: 8080

@@ -1,0 +1,78 @@
+# SFU uses hostNetwork so ICE UDP candidates use the node public/LAN IP.
+# Set WEBRTC_NAT_1TO1_IPS to that IP via node label or DaemonSet per node.
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: sfu
+  namespace: callservice
+spec:
+  selector:
+    matchLabels:
+      app: sfu
+  template:
+    metadata:
+      labels:
+        app: sfu
+    spec:
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+      containers:
+        - name: sfu
+          image: callservice/sfu:latest
+          ports:
+            - containerPort: 8082
+            - containerPort: 9093
+            - containerPort: 10000
+              protocol: UDP
+          envFrom:
+            - configMapRef:
+                name: callservice-config
+            - secretRef:
+                name: callservice-secrets
+          env:
+            - name: HTTP_PORT
+              value: "8082"
+            - name: METRICS_PORT
+              value: "9093"
+            - name: ROOM_GRPC_ADDR
+              value: rooms:8080
+            - name: SERVICE_NAME
+              value: sfu
+            - name: INSTANCE_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: PUBLIC_WS_URL
+              value: "wss://calls.example/sfu/v1/ws"
+            - name: WEBRTC_UDP_PORT_MIN
+              value: "10000"
+            - name: WEBRTC_UDP_PORT_MAX
+              value: "10100"
+            - name: REDIS_HOST
+              value: redis
+            - name: KAFKA_BROKERS
+              value: kafka:9092
+            # Inject real node public IP in your overlay (example placeholder):
+            - name: WEBRTC_NAT_1TO1_IPS
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.hostIP
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 8082
+          lifecycle:
+            preStop:
+              exec:
+                command: ["/bin/sh", "-c", "sleep 5"]
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: sfu-pdb
+  namespace: callservice
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: sfu

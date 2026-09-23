@@ -1,0 +1,23 @@
+# Local env and secrets — never commit
+.env
+**/.env
+!**/.env.template
+!deploy/env/.env.template
+deploy/compose/**/.env
+
+# Binaries / build
+bin/
+**/bin/
+*.exe
+dist/
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
+
+# Test / coverage
+coverage.out
+*.test
+
+/space_manufacture

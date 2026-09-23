@@ -1,0 +1,41 @@
+# ============================
+# Stage 1: Build signaling
+# ============================
+FROM golang:1.25-alpine AS builder
+
+RUN apk add --no-cache git ca-certificates
+
+WORKDIR /src
+
+COPY platform/go.mod platform/go.sum ./platform/
+COPY shared/go.mod shared/go.sum ./shared/
+COPY signaling/go.mod signaling/go.sum ./signaling/
+
+WORKDIR /src/signaling
+RUN go mod download
+
+WORKDIR /src
+COPY platform ./platform
+COPY shared ./shared
+COPY signaling ./signaling
+
+WORKDIR /src/signaling
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /signaling-service ./cmd
+
+# ============================
+# Stage 2: Runtime
+# ============================
+FROM alpine:3.21.3
+
+RUN addgroup -S appgroup && adduser -S appuser -G appgroup \
+  && apk add --no-cache ca-certificates curl
+
+WORKDIR /app
+
+COPY --from=builder /signaling-service ./signaling-service
+
+USER appuser
+
+EXPOSE 8081 9091
+
+ENTRYPOINT ["./signaling-service"]

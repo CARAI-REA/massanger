@@ -1,0 +1,34 @@
+groups:
+  - name: callService
+    rules:
+      - alert: CallServiceHighErrorRate
+        expr: sum(rate(grpc_server_handled_total{grpc_code!="OK"}[5m])) by (job) > 1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: High gRPC error rate on {{ $labels.job }}
+
+      - alert: SignalingWSDisconnectSpike
+        expr: sum(rate(signaling_ws_disconnects_total[5m])) > 10
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: Signaling disconnect spike
+
+      - alert: SFUAffinityRedirects
+        expr: sum(rate(sfu_affinity_redirects_total[5m])) > 5
+        for: 5m
+        labels:
+          severity: info
+        annotations:
+          summary: SFU room affinity redirects elevated
+
+      - alert: KafkaConsumerLag
+        expr: max(kafka_consumergroup_lag) by (consumergroup) > 1000
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: Kafka lag for {{ $labels.consumergroup }}

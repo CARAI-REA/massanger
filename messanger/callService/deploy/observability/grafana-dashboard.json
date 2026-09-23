@@ -1,0 +1,29 @@
+{
+  "title": "callService overview",
+  "timezone": "browser",
+  "panels": [
+    {
+      "type": "timeseries",
+      "title": "gRPC requests",
+      "targets": [{ "expr": "sum(rate(grpc_server_handled_total[1m])) by (grpc_method)" }]
+    },
+    {
+      "type": "timeseries",
+      "title": "SFU peer connections",
+      "targets": [{ "expr": "sfu_peer_connections" }]
+    },
+    {
+      "type": "timeseries",
+      "title": "RTP packets",
+      "targets": [{ "expr": "sum(rate(sfu_rtp_packets_total[1m])) by (direction)" }]
+    },
+    {
+      "type": "timeseries",
+      "title": "WS messages",
+      "targets": [{ "expr": "sum(rate(signaling_messages_total[1m])) by (type)" }]
+    }
+  ],
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "10s"
+}

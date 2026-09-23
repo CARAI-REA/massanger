@@ -1,0 +1,305 @@
+syntax ="proto3";
+
+package rooms.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/CARAI-REA/messanger/callService/shared/pkg/proto/rooms/v1;rooms_v1";
+
+service RoomService {
+    // Управление комнатами
+
+    // создаёт новую комнату для звонка, возвращает её идентификатор и токен для входа
+    rpc CreateRoom(CreateRoomRequest) returns (CreateRoomResponse);
+    
+    // возвращает информацию о комнате (название, настройки, статус) по её идентификатору
+    rpc GetRoom(GetRoomRequest) returns (GetRoomResponse);
+    
+    // обновляет настройки существующей комнаты (например, меняет название или лимит участников)
+    rpc UpdateRoom(UpdateRoomRequest) returns (UpdateRoomResponse);
+    
+    // помечает комнату как удалённую или полностью удаляет её из системы
+    rpc DeleteRoom(DeleteRoomRequest) returns (DeleteRoomResponse);
+    
+    // возвращает список комнат, созданных пользователем (активных или завершённых)
+    rpc ListRooms(ListRoomsRequest) returns (ListRoomsResponse);
+    
+    // принудительно завершает активную комнату (например, когда все вышли)
+    rpc EndRoom(EndRoomRequest) returns (EndRoomResponse);
+ 
+
+    // Управление участниками в комнатах
+
+    // регистрирует вход участника в комнату, проверяет права и возвращает токен для подключения
+    rpc AddParticipant(AddParticipantRequest) returns (AddParticipantResponse);
+    
+    // фиксирует выход участника из комнаты (добровольный или принудительный)
+    rpc RemoveParticipant(RemoveParticipantRequest) returns (RemoveParticipantResponse);
+    
+    // возвращает список всех активных участников в комнате
+    rpc GetParticipants(GetParticipantsRequest) returns (GetParticipantsResponse);
+    
+    // проверяет, находится ли пользователь в данный момент в комнате
+    rpc IsParticipant(IsParticipantRequest) returns (IsParticipantResponse);
+    
+    // обновляет дополнительную информацию об участнике (имя, версия клиента, состояние микрофона)
+    rpc UpdateParticipantMetadata(UpdateParticipantMetadataRequest) returns (UpdateParticipantMetadataResponse);
+
+    // service-only: room active + user is active participant (signaling/sfu)
+    rpc AssertCanJoin(AssertCanJoinRequest) returns (AssertCanJoinResponse);
+
+    // user access JWT: issue a fresh join token for an active participant
+    rpc RefreshJoinToken(RefreshJoinTokenRequest) returns (RefreshJoinTokenResponse);
+
+    // ephemeral TURN credentials (HMAC / coturn use-auth-secret)
+    rpc GetTURNCredentials(GetTURNCredentialsRequest) returns (GetTURNCredentialsResponse);
+}
+
+
+// Сообщения для управления комнатами
+
+
+// Настройки комнаты
+message RoomSettings {
+    int32 max_participants = 1;           // максимальное количество участников
+    repeated string allowed_users = 3;    // список пользователей, допущенных в приватную комнату (пустой = публичная)
+    string quality = 4;                   // качество видео
+    bool auto_close = 5;                  // автоматически завершать комнату, когда все вышли
+    bool recording_enabled = 6;           // включить запись звонка (SFU egress)
+}
+
+// Полная информация о комнате
+message Room {
+    string room_uuid = 1;                         // уникальный идентификатор комнаты (UUID)
+    string name = 2;                       // название комнаты
+    string owner_uuid = 3;                    // кто создал комнату
+    google.protobuf.Timestamp created_at = 4;                  // время создания
+    google.protobuf.Timestamp updated_at = 5;                   // время последнего обновления
+    google.protobuf.Timestamp deleted_at = 6;                    // время удаления (если есть)
+    RoomSettings room_settings = 7;               // настройки комнаты (метаданные)
+    string status = 8;                       // статуc
+}
+
+
+// Запросы и ответы для управления комнатами
+
+
+// Запрос на создание комнаты
+message CreateRoomRequest {
+    string name = 1;                         // название комнаты
+    string owner_uuid = 2;                      // идентификатор создателя (из JWT)
+    RoomSettings room_settings = 3;                 // настройки комнаты
+}
+
+// Ответ о создании комнаты, включающий в себя структуру room и токен
+message CreateRoomResponse {
+    Room room = 1;                             // созданная комната со всеми полями
+    string join_token = 2;                      // JWT для немедленного подключения к signaling
+}
+
+// Запрос на получение UUID комнаты
+message GetRoomRequest {
+    string room_uuid = 1;                         // идентификатор комнаты
+}
+
+// Ответ с информацией о комнате в структуре room
+message GetRoomResponse {
+    Room room = 1;                              // информация о комнате
+}
+
+// Запрос на обновление комнаты
+message UpdateRoomRequest {
+    string room_uuid = 1;                         // идентификатор комнаты
+    string owner_uuid = 2;                         // идентификатор владельца (для проверки прав)
+    RoomSettings room_settings = 3;                    // новые настройки
+}
+
+// Ответ на запрос обновления комнаты с флагом успеха и новой структурой комнаты
+message UpdateRoomResponse {
+    bool success = 1;                            // успешно ли обновление
+    Room room = 2;                                // обновлённая комната
+}
+
+// Запрос на удаление комнаты
+message DeleteRoomRequest {
+    string room_uuid = 1;                          // идентификатор комнаты
+    string owner_uuid = 2;                          // идентификатор владельца (для проверки прав)
+    bool permanent = 3;                           // true = полное удаление, false = soft delete (мягкое удаление, это когда мы не удаляем а просто ставим время удаления, что бы могли обратиться к комнате в будущем)
+}
+
+// Ответ на запрос удаления комнаты
+// Ответ на запрос о удалении комнаты содержащий флаг успеха
+message DeleteRoomResponse {
+    bool success = 1;                             // успешно ли удаление
+}
+
+//list rooms нужен для того что бы вернуть список комнат созданных пользователем
+
+// Запрос на получение списка комнат пользователя с поддержкой фильтрации и пагинации
+message ListRoomsRequest {
+    string owner_uuid = 1;                           // чьи комнаты ищем
+    string status = 2;                             // фильтр по статусу: "active", "ended", "all"
+    int32 limit = 3;                               // количество записей (пагинация)
+    int32 offset = 4;                               // смещение (пагинация)
+}
+
+// Ответ со списком комнат и общим количеством для пагинации
+message ListRoomsResponse {
+    repeated Room rooms = 1;                        // список комнат
+    int32 total = 2;                                // общее количество (для пагинации)
+}
+
+// Запрос на принудительное завершение активной комнаты
+message EndRoomRequest {
+    string room_uuid = 1;                             // идентификатор комнаты
+    string owner_uuid = 2;                             // идентификатор владельца или модератора
+}
+
+// Ответ на запрос завершения комнаты
+message EndRoomResponse {
+    bool success = 1;                                // успешно ли завершение
+}
+
+
+// Сообщения для управления участниками
+
+
+// Информация об участнике
+message Participant {
+    string user_uuid = 1;                              // идентификатор участника
+    string room_uuid = 2;                               // комната, в которой участвует
+    google.protobuf.Timestamp joined_at = 3;                             // время входа
+    google.protobuf.Timestamp left_at = 4;                                // время выхода (если вышел)
+    ParticipantMetadata metadata = 5;                                 // метаданные в JSON (имя, клиент, состояние)
+}
+
+// Метаданные участника (для удобства, но в proto храним как отдельный месседж)
+message ParticipantMetadata {
+    string display_name = 1;                           // отображаемое имя
+    string user_agent = 2;                              // информация о клиенте
+    string client_version = 3;                          // версия клиента
+    bool audio_muted = 4;                               // заглушен ли микрофон
+    bool video_muted = 5;                               // выключена ли камера
+    string role = 6;                                     // роль: "participant", "moderator", "owner"
+}
+
+// Запрос на добавление участника в комнату
+message AddParticipantRequest {
+    string room_uuid = 1;                                 // в какую комнату входит
+    string user_uuid = 2;                                 // кто входит
+    ParticipantMetadata metadata = 3;                                  // дополнительная информация (имя, браузер и т.п.) в JSON
+}
+
+// Ответ на запрос добавления участника в комнату
+message AddParticipantResponse {
+    bool success = 1;                                    // успешно ли добавлен участник
+    string join_token = 2;                                // JWT для подключения к signaling сервису
+    Participant participant = 3;                          // информация о добавленном участнике
+}
+
+// Запрос на удаление участника из комнаты (выход или кик)
+message RemoveParticipantRequest {
+    string room_uuid = 1;                                  // из какой комнаты выходит
+    string user_uuid = 2;                                  // кто выходит
+    string removed_by = 3;                               // кто инициировал удаление (для кика)
+}
+
+// Ответ на запрос удаления участника из комнаты
+message RemoveParticipantResponse {
+    bool success = 1;                                     // успешно ли удаление
+}
+
+// Запрос на получение списка участников комнаты
+message GetParticipantsRequest {
+    string room_uuid = 1;                                   // комната
+    bool only_active = 2;                                 // только активные (не вышедшие)
+}
+
+// Ответ со списком участников комнаты и количеством активных
+message GetParticipantsResponse {
+    repeated Participant participants = 1;                 // список участников
+    int32 active_count = 2;                                // количество активных
+}
+
+// Запрос на проверку, активен ли участник в комнате
+message IsParticipantRequest {
+    string room_uuid = 1;                                    // комната
+    string user_uuid = 2;                                    // пользователь
+}
+
+// Ответ на запрос проверки активности участника в комнате
+message IsParticipantResponse {
+    bool is_active = 1;                                    // true если активен в комнате
+    Participant participant = 2;                           // информация об участнике (если активен)
+}
+
+// Запрос на обновление метаданных участника в комнате
+message UpdateParticipantMetadataRequest {
+    string room_uuid = 1;                                    // комната
+    string user_uuid = 2;                                    // пользователь
+    ParticipantMetadata metadata = 3;                                     // новые метаданные в JSON
+}
+
+// Ответ на запрос обновления метаданных участника
+message UpdateParticipantMetadataResponse {
+    bool success = 1;                                       // успешно ли обновление
+    Participant participant = 2;                            // обновлённый участник
+}
+
+// AssertCanJoinRequest is used by signaling/sfu (service JWT) to verify join eligibility.
+message AssertCanJoinRequest {
+    string room_uuid = 1;
+    string user_uuid = 2;
+}
+
+// AssertCanJoinResponse reports whether the user may join the room.
+message AssertCanJoinResponse {
+    bool ok = 1;
+    string room_status = 2;
+}
+
+// RefreshJoinTokenRequest asks for a new join JWT for an active participant.
+message RefreshJoinTokenRequest {
+    string room_uuid = 1;
+    string user_uuid = 2;
+}
+
+// RefreshJoinTokenResponse contains a freshly issued join JWT.
+message RefreshJoinTokenResponse {
+    string join_token = 1;
+}
+
+// GetTURNCredentialsRequest requests short-lived TURN credentials for a participant.
+message GetTURNCredentialsRequest {
+    string room_uuid = 1;
+    string user_uuid = 2;
+}
+
+// ICEServer describes a STUN/TURN endpoint with optional credentials.
+message ICEServer {
+    repeated string urls = 1;
+    string username = 2;
+    string credential = 3;
+}
+
+// GetTURNCredentialsResponse returns ICE servers with ephemeral TURN credentials.
+message GetTURNCredentialsResponse {
+    repeated ICEServer ice_servers = 1;
+    int64 ttl_seconds = 2;
+}
+
+
+// Общие сообщения для ошибок и статусов
+
+// Структура описания ошибки, которую может вернуть сервис
+message Error {
+    string code = 1;                                       // код ошибки (например, "ROOM_NOT_FOUND")
+    string message = 2;                                     // человекочитаемое описание
+}
+
+// Структура общего статуса операции, включающая успех и возможную ошибку
+message Status {
+    bool success = 1;                                       // успех операции
+    string message = 2;                                      // дополнительное сообщение
+    Error error = 3;                                         // ошибка (если есть)
+}

@@ -1,0 +1,29 @@
+services:
+  signaling:
+    build:
+      context: ../../..
+      dockerfile: deploy/docker/Dockerfile.signaling
+    container_name: signaling
+    env_file:
+      - .env
+    environment:
+      HTTP_HOST: 0.0.0.0
+      REDIS_HOST: redis
+      KAFKA_BROKERS: kafka:29092
+      ROOM_GRPC_ADDR: rooms:8080
+    ports:
+      - "${HTTP_PORT}:${HTTP_PORT}"
+      - "${METRICS_PORT}:${METRICS_PORT}"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:${HTTP_PORT}/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    restart: unless-stopped
+    networks:
+      - rooms-net
+
+networks:
+  rooms-net:
+    external: true
