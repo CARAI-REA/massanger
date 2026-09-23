@@ -2,6 +2,7 @@ package roommgr_test
 
 import (
 	"context"
+	"encoding/json"
 	"sync"
 	"testing"
 	"time"
@@ -54,49 +55,12 @@ func (c *memConn) waitType(t *testing.T, typ model.MessageType, after int, timeo
 	return model.Envelope{}
 }
 
-func TestRenegotiateOfferAfterAddTrack(t *testing.T) {
-	f, err := webrtcapi.NewFactory(webrtcapi.Config{
-		ICEServers: []webrtcapi.ICEServer{{URLs: []string{"stun:stun.l.google.com:19302"}}},
-	})
-	require.NoError(t, err)
-	mgr := roommgr.NewManager(f, nil, roommgr.Options{})
-
-	conn := &memConn{}
-	peer, _, err := mgr.Join(context.Background(), "room", "user-a", conn)
-	require.NoError(t, err)
-
-	// Initial client offer → SFU answer (connection becomes stable).
-	offerPC, err := f.NewPeerConnection()
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = offerPC.Close(); mgr.Leave("room", "user-a") })
-
-	_, err = offerPC.AddTransceiverFromKind(webrtc.RTPCodecTypeAudio, webrtc.RTPTransceiverInit{
-		Direction: webrtc.RTPTransceiverDirectionSendrecv,
-	})
-	require.NoError(t, err)
-
-	offer, err := offerPC.CreateOffer(nil)
-	require.NoError(t, err)
-	require.NoError(t, offerPC.SetLocalDescription(offer))
-	offer = *offerPC.LocalDescription()
-	require.Contains(t, offer.SDP, "ice-ufrag")
-	require.NoError(t, mgr.HandleSignal("room", "user-a", model.Envelope{
-		Type:    model.TypeOffer,
-		Payload: converter.MustPayload(model.SDPPayload{SDP: offer.SDP}),
-	}))
-	_ = conn.waitType(t, model.TypeAnswer, 0, 2*time.Second)
-	require.Equal(t, webrtc.SignalingStateStable, peer.PC.SignalingState())
-
-	// Mid-call AddTrack must produce an SFU-originated renegotiation offer.
-	track, err := webrtc.NewTrackLocalStaticRTP(
-		webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeOpus},
-		"audio-late", "stream-late",
-	)
-	require.NoError(t, err)
-	_, err = peer.PC.AddTrack(track)
-	require.NoError(t, err)
-
-	_ = conn.waitType(t, model.TypeOffer, 0, 3*time.Second)
+func sdpPayload(t *testing.T, msg model.Envelope) string {
+	t.Helper()
+	var payload model.SDPPayload
+	require.NoError(t, json.Unmarshal(msg.Payload, &payload))
+	require.NotEmpty(t, payload.SDP)
+	return payload.SDP
 }
 
 func TestFactoryNAT1To1(t *testing.T) {
@@ -114,4 +78,59 @@ func TestFactoryNAT1To1(t *testing.T) {
 		NAT1To1CandidateType: "bogus",
 	})
 	require.Error(t, err)
+}
+
+// TestRenegotiateOfferAfterAddTrack covers the production path used after
+// subscribePeerToTrack: AddTrack on a stable peer, then negotiate → TypeOffer.
+func TestRenegotiateOfferAfterAddTrack(t *testing.T) {
+	f, err := webrtcapi.NewFactory(webrtcapi.Config{})
+	require.NoError(t, err)
+	mgr := roommgr.NewManager(f, nil, roommgr.Options{})
+
+	conn := &memConn{}
+	peer, _, err := mgr.Join(context.Background(), "room", "user-a", conn)
+	require.NoError(t, err)
+
+	client, err := f.NewPeerConnection()
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = client.Close(); mgr.Leave("room", "user-a") })
+
+	_, err = client.AddTransceiverFromKind(webrtc.RTPCodecTypeAudio, webrtc.RTPTransceiverInit{
+		Direction: webrtc.RTPTransceiverDirectionSendrecv,
+	})
+	require.NoError(t, err)
+
+	offer, err := client.CreateOffer(nil)
+	require.NoError(t, err)
+	require.NoError(t, client.SetLocalDescription(offer))
+	offer = *client.LocalDescription()
+	require.Contains(t, offer.SDP, "ice-ufrag")
+	require.NoError(t, mgr.HandleSignal("room", "user-a", model.Envelope{
+		Type:    model.TypeOffer,
+		Payload: converter.MustPayload(model.SDPPayload{SDP: offer.SDP}),
+	}))
+
+	ansMsg := conn.waitType(t, model.TypeAnswer, 0, 2*time.Second)
+	require.NoError(t, client.SetRemoteDescription(webrtc.SessionDescription{
+		Type: webrtc.SDPTypeAnswer,
+		SDP:  sdpPayload(t, ansMsg),
+	}))
+
+	// With no remote tracks to subscribe, the SFU must stay stable after the
+	// initial answer (no speculative renegotiation offer).
+	require.Equal(t, webrtc.SignalingStateStable, peer.PC.SignalingState())
+
+	track, err := webrtc.NewTrackLocalStaticRTP(
+		webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeOpus},
+		"audio-late", "stream-late",
+	)
+	require.NoError(t, err)
+	_, err = peer.PC.AddTrack(track)
+	require.NoError(t, err)
+
+	// Mirror onTrack → subscribePeerToTrack → negotiate.
+	require.NoError(t, mgr.Negotiate("room", "user-a"))
+
+	offerMsg := conn.waitType(t, model.TypeOffer, 0, 3*time.Second)
+	require.Contains(t, sdpPayload(t, offerMsg), "audio-late")
 }

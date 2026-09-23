@@ -196,14 +196,21 @@ func (m *Manager) Join(ctx context.Context, roomUUID, userUUID string, conn serv
 		others = append(others, other)
 	}
 	m.mu.RUnlock()
+	subscribed := false
 	for _, other := range others {
 		other.mu.Lock()
 		for _, pub := range other.published {
-			_ = m.subscribePeerToTrack(p, pub.track)
+			if err := m.subscribePeerToTrack(p, pub.track); err == nil {
+				subscribed = true
+			}
 		}
 		other.mu.Unlock()
 	}
-	m.negotiate(roomUUID, p)
+	// Only mark renegotiation when the new peer actually got remote tracks.
+	// Otherwise post-answer negotiate would race into HaveLocalOffer for nothing.
+	if subscribed {
+		m.negotiate(roomUUID, p)
+	}
 
 	metrics.PeerConnections.Inc()
 	_ = ctx
@@ -497,8 +504,13 @@ func (m *Manager) HandleSignal(roomUUID, userUUID string, msg model.Envelope) er
 			return err
 		}
 		metrics.MessagesTotal.WithLabelValues(string(model.TypeAnswer), "out").Inc()
-		// After initial answer, push SFU offer if subscribers still need m-lines.
-		go m.negotiate(roomUUID, p)
+		// After initial answer, push SFU offer only if subscribers still need m-lines.
+		p.negMu.Lock()
+		needed := p.negotiationNeeded
+		p.negMu.Unlock()
+		if needed {
+			go m.negotiate(roomUUID, p)
+		}
 		return nil
 	case model.TypeAnswer:
 		var payload model.SDPPayload
@@ -534,6 +546,17 @@ func (m *Manager) HandleSignal(roomUUID, userUUID string, msg model.Envelope) er
 	default:
 		return model.ErrInvalidArgument
 	}
+}
+
+// Negotiate pushes an SFU-originated offer for a peer (same path as after
+// subscribePeerToTrack when a new remote track is published).
+func (m *Manager) Negotiate(roomUUID, userUUID string) error {
+	p, ok := m.Get(roomUUID, userUUID)
+	if !ok || p.PC == nil {
+		return model.ErrNotFound
+	}
+	m.negotiate(roomUUID, p)
+	return nil
 }
 
 func (m *Manager) Leave(roomUUID, userUUID string) {
