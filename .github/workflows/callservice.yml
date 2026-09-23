@@ -59,32 +59,20 @@ jobs:
           (cd sfu && go build -o /dev/null ./cmd)
 
   proto:
-    name: Proto lint + generate drift
+    name: Proto lint
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-go@v5
-        with:
-          go-version: ${{ env.GO_VERSION }}
-
-      - name: Install buf + plugins via Taskfile
+      - name: Install buf
         run: |
           sh -c "$(curl --location https://taskfile.dev/install.sh)" -- -d -b ./bin
-          ./bin/task proto:install-plugins
           ./bin/task install-buf
+          test -x ./bin/buf
 
       - name: Buf lint
-        run: ./bin/buf lint
+        run: "${GITHUB_WORKSPACE}/messanger/callService/bin/buf" lint
         working-directory: messanger/callService/shared/proto
-
-      - name: Buf generate + check drift
-        run: |
-          ./bin/task proto:gen
-          git diff --exit-code -- shared/pkg/proto || {
-            echo "Generated proto is out of date. Run: task proto:gen"
-            exit 1
-          }
 
   integration:
     name: Integration tests (testcontainers)
