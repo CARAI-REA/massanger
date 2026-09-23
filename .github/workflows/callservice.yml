@@ -1,0 +1,183 @@
+name: callService CI
+
+on:
+  push:
+    branches: [main, master, master_test]
+    paths:
+      - "messanger/callService/**"
+      - ".github/workflows/callservice.yml"
+  pull_request:
+    paths:
+      - "messanger/callService/**"
+      - ".github/workflows/callservice.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: callservice-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: messanger/callService
+
+env:
+  GO_VERSION: "1.25.x"
+
+jobs:
+  unit:
+    name: Unit tests + build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: |
+            messanger/callService/platform/go.sum
+            messanger/callService/shared/go.sum
+            messanger/callService/rooms/go.sum
+            messanger/callService/signaling/go.sum
+            messanger/callService/sfu/go.sum
+
+      - name: Platform tests
+        run: cd platform && go test ./... -count=1
+
+      - name: Rooms unit (-short)
+        run: cd rooms && go test ./... -count=1 -short
+
+      - name: Signaling unit (-short)
+        run: cd signaling && go test ./... -count=1 -short
+
+      - name: SFU unit (-short)
+        run: cd sfu && go test ./... -count=1 -short
+
+      - name: Build binaries
+        run: |
+          (cd rooms && go build -o /dev/null ./cmd)
+          (cd signaling && go build -o /dev/null ./cmd)
+          (cd sfu && go build -o /dev/null ./cmd)
+
+  proto:
+    name: Proto lint + generate drift
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Install buf + plugins via Taskfile
+        run: |
+          sh -c "$(curl --location https://taskfile.dev/install.sh)" -- -d -b ./bin
+          ./bin/task proto:install-plugins
+          ./bin/task install-buf
+
+      - name: Buf lint
+        run: ./bin/buf lint
+        working-directory: messanger/callService/shared/proto
+
+      - name: Buf generate + check drift
+        run: |
+          ./bin/task proto:gen
+          git diff --exit-code -- shared/pkg/proto || {
+            echo "Generated proto is out of date. Run: task proto:gen"
+            exit 1
+          }
+
+  integration:
+    name: Integration tests (testcontainers)
+    runs-on: ubuntu-latest
+    needs: unit
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: |
+            messanger/callService/platform/go.sum
+            messanger/callService/rooms/go.sum
+            messanger/callService/signaling/go.sum
+            messanger/callService/sfu/go.sum
+
+      - name: Rooms integration
+        run: cd rooms && go test ./... -count=1
+
+      - name: Signaling integration
+        run: cd signaling && go test ./... -count=1
+
+      - name: SFU integration
+        run: cd sfu && go test ./... -count=1
+
+  e2e:
+    name: Compose full-stack E2E
+    runs-on: ubuntu-latest
+    needs: [unit, proto]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: |
+            messanger/callService/rooms/go.sum
+            messanger/callService/scripts/e2e_full_stack/go.sum
+
+      - name: Install task + envsubst
+        run: |
+          sh -c "$(curl --location https://taskfile.dev/install.sh)" -- -d -b ./bin
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq gettext-base
+
+      - name: Prepare env files
+        run: |
+          chmod +x scripts/ci_prepare_env.sh
+          PATH="$PWD/bin:$PATH" ./scripts/ci_prepare_env.sh
+
+      - name: Up core (creates rooms-net + redis + kafka)
+        run: |
+          docker compose --env-file deploy/compose/core/.env \
+            -f deploy/compose/core/docker-compose.yml up -d
+          for i in $(seq 1 60); do
+            docker exec redis redis-cli ping 2>/dev/null | grep -q PONG && break
+            sleep 2
+          done
+
+      - name: Up rooms
+        run: |
+          docker compose --env-file deploy/compose/rooms/.env \
+            -f deploy/compose/rooms/docker-compose.yml up -d --build
+
+      - name: Up signaling + sfu
+        run: |
+          docker compose --env-file deploy/compose/signaling/.env \
+            -f deploy/compose/signaling/docker-compose.yml up -d --build
+          docker compose --env-file deploy/compose/sfu/.env \
+            -f deploy/compose/sfu/docker-compose.yml up -d --build
+
+      - name: Wait healthy
+        run: |
+          for i in $(seq 1 90); do
+            ok=1
+            curl -sf --max-time 2 http://127.0.0.1:9090/metrics >/dev/null || ok=0
+            curl -sf --max-time 2 http://127.0.0.1:8081/readyz >/dev/null || ok=0
+            curl -sf --max-time 2 http://127.0.0.1:8082/readyz >/dev/null || ok=0
+            [[ "$ok" == "1" ]] && echo healthy && exit 0
+            sleep 3
+          done
+          echo "services not healthy"; docker ps -a; docker logs rooms --tail 80 || true
+          docker logs signaling --tail 80 || true; docker logs sfu --tail 80 || true
+          exit 1
+
+      - name: Full-stack E2E
+        run: cd scripts/e2e_full_stack && go mod tidy && go run .
+
+      - name: Tear down
+        if: always()
+        run: |
+          docker compose -f deploy/compose/sfu/docker-compose.yml down || true
+          docker compose -f deploy/compose/signaling/docker-compose.yml down || true
+          docker compose -f deploy/compose/rooms/docker-compose.yml down || true
+          docker compose -f deploy/compose/core/docker-compose.yml down || true
