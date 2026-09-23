@@ -71,7 +71,8 @@ jobs:
           test -x ./bin/buf
 
       - name: Buf lint
-        run: "${GITHUB_WORKSPACE}/messanger/callService/bin/buf" lint
+        run: |
+          "$GITHUB_WORKSPACE/messanger/callService/bin/buf" lint
         working-directory: messanger/callService/shared/proto
 
   integration:
@@ -102,7 +103,7 @@ jobs:
   e2e:
     name: Compose full-stack E2E
     runs-on: ubuntu-latest
-    needs: [unit, proto]
+    needs: [unit]
     steps:
       - uses: actions/checkout@v4
 
