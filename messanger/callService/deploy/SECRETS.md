@@ -32,4 +32,4 @@ Do **not** commit real values. Use Vault / Kubernetes Secrets / sealed-secrets i
 | WS query `?token=` | allowed | disabled (`WS_ALLOW_QUERY_TOKEN=false`) |
 | Origins | empty = allow all | must be set |
 
-See `deploy/env/.env.template` for variable names (`CHANGE_ME` placeholders).
+See `deploy/env/.env.template` for local variable names and `deploy/env/.env.production.example` + `deploy/PROD_CHECKLIST.md` for production.

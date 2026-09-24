@@ -1,29 +1,189 @@
 {
+  "uid": "callservice-overview",
   "title": "callService overview",
   "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 3,
+  "refresh": "10s",
+  "tags": ["callservice"],
+  "templating": { "list": [] },
+  "time": { "from": "now-1h", "to": "now" },
   "panels": [
     {
-      "type": "timeseries",
-      "title": "gRPC requests",
-      "targets": [{ "expr": "sum(rate(grpc_server_handled_total[1m])) by (grpc_method)" }]
+      "id": 10,
+      "type": "stat",
+      "title": "Scrape targets (up)",
+      "gridPos": { "h": 4, "w": 24, "x": 0, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "up",
+          "legendFormat": "{{job}}"
+        }
+      ],
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value_and_name"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            { "type": "value", "options": { "0": { "text": "DOWN", "color": "red" }, "1": { "text": "UP", "color": "green" } } }
+          ],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "green", "value": 1 }] }
+        },
+        "overrides": []
+      }
     },
     {
+      "id": 1,
       "type": "timeseries",
-      "title": "SFU peer connections",
-      "targets": [{ "expr": "sfu_peer_connections" }]
+      "title": "Rooms gRPC requests",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(room_service_requests_total[1m])) by (method)",
+          "legendFormat": "{{method}}"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] }
     },
     {
+      "id": 2,
       "type": "timeseries",
-      "title": "RTP packets",
-      "targets": [{ "expr": "sum(rate(sfu_rtp_packets_total[1m])) by (direction)" }]
+      "title": "Rooms active rooms / participants",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "room_service_active_rooms",
+          "legendFormat": "rooms"
+        },
+        {
+          "refId": "B",
+          "expr": "room_service_active_participants",
+          "legendFormat": "participants"
+        }
+      ]
     },
     {
+      "id": 3,
       "type": "timeseries",
-      "title": "WS messages",
-      "targets": [{ "expr": "sum(rate(signaling_messages_total[1m])) by (type)" }]
+      "title": "Signaling WS connections",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "signaling_ws_connections",
+          "legendFormat": "ws"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Signaling messages",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(signaling_messages_total[1m])) by (type, direction)",
+          "legendFormat": "{{direction}} {{type}}"
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "type": "timeseries",
+      "title": "Kafka events (signaling / sfu)",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 20 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(signaling_kafka_events_total[1m])) by (event_type)",
+          "legendFormat": "sig {{event_type}}"
+        },
+        {
+          "refId": "B",
+          "expr": "sum(rate(sfu_kafka_events_total[1m])) by (event_type)",
+          "legendFormat": "sfu {{event_type}}"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "SFU peer / WS connections",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 20 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sfu_peer_connections",
+          "legendFormat": "peers"
+        },
+        {
+          "refId": "B",
+          "expr": "sfu_ws_connections",
+          "legendFormat": "ws"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "SFU messages",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 28 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(sfu_messages_total[1m])) by (type, direction)",
+          "legendFormat": "{{direction}} {{type}}"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "SFU tracks published / subscribed",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 28 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sfu_tracks_published",
+          "legendFormat": "published"
+        },
+        {
+          "refId": "B",
+          "expr": "sfu_tracks_subscribed",
+          "legendFormat": "subscribed"
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "type": "timeseries",
+      "title": "Go goroutines (health)",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 36 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "go_goroutines",
+          "legendFormat": "{{job}}"
+        }
+      ]
     }
-  ],
-  "schemaVersion": 39,
-  "version": 1,
-  "refresh": "10s"
+  ]
 }
