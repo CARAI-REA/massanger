@@ -21,5 +21,8 @@ const (
 	CodeRoomClosed       = "ROOM_CLOSED"
 	CodeSessionReplaced  = "SESSION_REPLACED"
 	CodeRateLimited      = "RATE_LIMITED"
+	CodeTokenExpired     = "TOKEN_EXPIRED"
 	CodeInternal         = "INTERNAL"
+
+	CloseTokenExpired = 4001
 )

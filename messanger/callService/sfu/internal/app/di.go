@@ -3,10 +3,12 @@ package app
 import (
 	"context"
 	"fmt"
+	"net"
 	"net/http"
 
 	redigo "github.com/gomodule/redigo/redis"
 	"github.com/CARAI-REA/messanger/callService/platform/pkg/closer"
+	"github.com/CARAI-REA/messanger/callService/platform/pkg/prodguard"
 	"github.com/CARAI-REA/messanger/callService/platform/pkg/tokens"
 	jwtTokens "github.com/CARAI-REA/messanger/callService/platform/pkg/tokens/jwt"
 
@@ -150,6 +152,7 @@ func (d *diContainer) SessionService(ctx context.Context) service.SessionService
 			config.AppConfig().Instance.PublicWSURL(),
 			config.AppConfig().Redis.AffinityTTL(),
 			config.AppConfig().RoomGRPC.Enabled(),
+			prodguard.IsProduction(config.AppConfig().AppEnv.Env()) && config.AppConfig().RoomGRPC.Enabled(),
 		)
 	}
 	return d.sessionService
@@ -191,6 +194,10 @@ func (d *diContainer) HTTPMux(ctx context.Context) http.Handler {
 		_, _ = w.Write([]byte("ok"))
 	})
 	mux.HandleFunc("/readyz", func(w http.ResponseWriter, r *http.Request) {
+		if d.SessionService(ctx).IsDraining() {
+			http.Error(w, "draining", http.StatusServiceUnavailable)
+			return
+		}
 		conn, err := d.RedisPool().GetContext(r.Context())
 		if err != nil {
 			http.Error(w, "redis unavailable", http.StatusServiceUnavailable)
@@ -203,6 +210,23 @@ func (d *diContainer) HTTPMux(ctx context.Context) http.Handler {
 		}
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok"))
+	})
+	mux.HandleFunc("/internal/drain", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		host, _, err := net.SplitHostPort(r.RemoteAddr)
+		if err != nil {
+			host = r.RemoteAddr
+		}
+		if host != "127.0.0.1" && host != "::1" {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
+		d.SessionService(ctx).BeginDrain()
+		w.WriteHeader(http.StatusAccepted)
+		_, _ = w.Write([]byte("draining"))
 	})
 	cfg := config.AppConfig().HTTP
 	mux.Handle(cfg.WSPath(), wsv1.NewHandler(

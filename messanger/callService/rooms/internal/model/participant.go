@@ -148,8 +148,9 @@ type AssertCanJoinRequest struct {
 
 // AssertCanJoinResponse reports whether the user may join the room.
 type AssertCanJoinResponse struct {
-	Ok         bool
-	RoomStatus string
+	Ok               bool
+	RoomStatus       string
+	RecordingEnabled bool
 }
 
 // RefreshJoinTokenRequest asks for a new join JWT for an active participant.

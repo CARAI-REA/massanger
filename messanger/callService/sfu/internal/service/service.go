@@ -19,4 +19,7 @@ type SessionService interface {
 	Disconnect(ctx context.Context, conn Conn, roomUUID, userUUID string, reason string) error
 	CloseRoom(ctx context.Context, roomUUID string) error
 	CloseUser(ctx context.Context, roomUUID, userUUID string) error
+	BeginDrain()
+	IsDraining() bool
+	WaitEmpty(ctx context.Context) error
 }

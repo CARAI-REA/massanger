@@ -4,11 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"time"
 
 	"github.com/CARAI-REA/messanger/callService/platform/pkg/closer"
 	"github.com/CARAI-REA/messanger/callService/platform/pkg/logger"
+	"github.com/CARAI-REA/messanger/callService/platform/pkg/prodguard"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"sfu/internal/config"
@@ -52,6 +54,11 @@ func (a *App) Run(ctx context.Context) error {
 
 	select {
 	case <-ctx.Done():
+		// Drain before HTTP shutdown so new Connects are rejected while peers leave.
+		a.diContainer.SessionService(ctx).BeginDrain()
+		drainCtx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
+		defer cancel()
+		_ = a.diContainer.SessionService(ctx).WaitEmpty(drainCtx)
 		return nil
 	case err := <-errCh:
 		return err
@@ -103,8 +110,15 @@ func (a *App) initHTTPServer(ctx context.Context) error {
 func (a *App) initMetricsServer(_ context.Context) error {
 	mux := http.NewServeMux()
 	mux.Handle("/metrics", promhttp.Handler())
+	addr := config.AppConfig().Metrics.Address()
+	if prodguard.IsProduction(config.AppConfig().AppEnv.Env()) {
+		_, port, err := net.SplitHostPort(addr)
+		if err == nil {
+			addr = net.JoinHostPort("127.0.0.1", port)
+		}
+	}
 	a.metricsServer = &http.Server{
-		Addr:              config.AppConfig().Metrics.Address(),
+		Addr:              addr,
 		Handler:           mux,
 		ReadHeaderTimeout: 5 * time.Second,
 	}

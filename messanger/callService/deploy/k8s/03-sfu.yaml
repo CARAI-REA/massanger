@@ -32,6 +32,8 @@ spec:
           env:
             - name: HTTP_PORT
               value: "8082"
+            - name: METRICS_HOST
+              value: "127.0.0.1"
             - name: METRICS_PORT
               value: "9093"
             - name: ROOM_GRPC_ADDR
@@ -64,7 +66,7 @@ spec:
           lifecycle:
             preStop:
               exec:
-                command: ["/bin/sh", "-c", "sleep 5"]
+                command: ["/bin/sh", "-c", "wget -q -O- --post-data='' http://127.0.0.1:8082/internal/drain || curl -s -X POST http://127.0.0.1:8082/internal/drain || true; sleep 20"]
 ---
 apiVersion: policy/v1
 kind: PodDisruptionBudget

@@ -113,7 +113,8 @@ services:
     command: >
       bash -c "
         echo 'Creating Kafka topics...'
-        # Production multi-broker: set replication-factor >= 3. Single-node compose keeps RF=1.
+        # Production: use an external Kafka cluster with replication-factor >= 3.
+        # Single-node local compose must keep RF=1.
         kafka-topics --bootstrap-server kafka:${KAFKA_INTERNAL_PORT} --create --topic test-topic --partitions 3 --replication-factor 1 --if-not-exists
         kafka-topics --bootstrap-server kafka:${KAFKA_INTERNAL_PORT} --create --topic test-topic-single --partitions 1 --replication-factor 1 --if-not-exists
         kafka-topics --bootstrap-server kafka:${KAFKA_INTERNAL_PORT} --create --topic room-events --partitions 3 --replication-factor 1 --if-not-exists

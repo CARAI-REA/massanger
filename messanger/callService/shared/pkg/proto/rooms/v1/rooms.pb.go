@@ -1616,11 +1616,12 @@ func (x *AssertCanJoinRequest) GetUserUuid() string {
 
 // AssertCanJoinResponse reports whether the user may join the room.
 type AssertCanJoinResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Ok            bool                   `protobuf:"varint,1,opt,name=ok,proto3" json:"ok,omitempty"`
-	RoomStatus    string                 `protobuf:"bytes,2,opt,name=room_status,json=roomStatus,proto3" json:"room_status,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	Ok               bool                   `protobuf:"varint,1,opt,name=ok,proto3" json:"ok,omitempty"`
+	RoomStatus       string                 `protobuf:"bytes,2,opt,name=room_status,json=roomStatus,proto3" json:"room_status,omitempty"`
+	RecordingEnabled bool                   `protobuf:"varint,3,opt,name=recording_enabled,json=recordingEnabled,proto3" json:"recording_enabled,omitempty"` // room setting; SFU uses for per-room RTP dump
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *AssertCanJoinResponse) Reset() {
@@ -1665,6 +1666,13 @@ func (x *AssertCanJoinResponse) GetRoomStatus() string {
 		return x.RoomStatus
 	}
 	return ""
+}
+
+func (x *AssertCanJoinResponse) GetRecordingEnabled() bool {
+	if x != nil {
+		return x.RecordingEnabled
+	}
+	return false
 }
 
 // RefreshJoinTokenRequest asks for a new join JWT for an active participant.
@@ -2168,11 +2176,12 @@ const file_rooms_v1_rooms_proto_rawDesc = "" +
 	"\vparticipant\x18\x02 \x01(\v2\x15.rooms.v1.ParticipantR\vparticipant\"P\n" +
 	"\x14AssertCanJoinRequest\x12\x1b\n" +
 	"\troom_uuid\x18\x01 \x01(\tR\broomUuid\x12\x1b\n" +
-	"\tuser_uuid\x18\x02 \x01(\tR\buserUuid\"H\n" +
+	"\tuser_uuid\x18\x02 \x01(\tR\buserUuid\"u\n" +
 	"\x15AssertCanJoinResponse\x12\x0e\n" +
 	"\x02ok\x18\x01 \x01(\bR\x02ok\x12\x1f\n" +
 	"\vroom_status\x18\x02 \x01(\tR\n" +
-	"roomStatus\"S\n" +
+	"roomStatus\x12+\n" +
+	"\x11recording_enabled\x18\x03 \x01(\bR\x10recordingEnabled\"S\n" +
 	"\x17RefreshJoinTokenRequest\x12\x1b\n" +
 	"\troom_uuid\x18\x01 \x01(\tR\broomUuid\x12\x1b\n" +
 	"\tuser_uuid\x18\x02 \x01(\tR\buserUuid\"9\n" +

@@ -27,6 +27,8 @@ spec:
           env:
             - name: HTTP_PORT
               value: "8081"
+            - name: METRICS_HOST
+              value: "127.0.0.1"
             - name: METRICS_PORT
               value: "9091"
             - name: ROOM_GRPC_ADDR

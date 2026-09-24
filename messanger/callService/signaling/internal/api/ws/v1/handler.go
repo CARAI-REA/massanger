@@ -93,6 +93,25 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	claims, err := h.verifier.VerifyJoinToken(r.Context(), token)
 	if err != nil {
+		if errors.Is(err, tokens.ErrTokenExpired) {
+			metrics.HandshakeFailuresTotal.WithLabelValues("token_expired").Inc()
+			ws, upErr := h.upgrader.Upgrade(w, r, nil)
+			if upErr != nil {
+				http.Error(w, "token expired", http.StatusUnauthorized)
+				return
+			}
+			_ = ws.WriteJSON(map[string]any{
+				"type": "error",
+				"payload": map[string]string{
+					"code":    model.CodeTokenExpired,
+					"message": "join token expired",
+				},
+			})
+			_ = ws.WriteMessage(websocket.CloseMessage,
+				websocket.FormatCloseMessage(model.CloseTokenExpired, model.CodeTokenExpired))
+			_ = ws.Close()
+			return
+		}
 		metrics.HandshakeFailuresTotal.WithLabelValues("invalid_token").Inc()
 		http.Error(w, "invalid token", http.StatusUnauthorized)
 		return
