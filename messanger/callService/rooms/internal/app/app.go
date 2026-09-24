@@ -11,8 +11,10 @@ import (
 	"github.com/CARAI-REA/messanger/callService/platform/pkg/closer"
 	"github.com/CARAI-REA/messanger/callService/platform/pkg/grpc/health"
 	"github.com/CARAI-REA/messanger/callService/platform/pkg/logger"
+	"github.com/CARAI-REA/messanger/callService/platform/pkg/prodguard"
 	roomsV1 "github.com/CARAI-REA/messanger/callService/shared/pkg/proto/rooms/v1"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
 
@@ -120,6 +122,7 @@ func (a *App) initListener(_ context.Context) error {
 
 func (a *App) initGRPCServer(ctx context.Context) error {
 	a.grpcServer = grpc.NewServer(
+		grpc.StatsHandler(otelgrpc.NewServerHandler()),
 		grpc.ChainUnaryInterceptor(
 			interceptor.AuthInterceptor(
 				a.diContainer.AccessTokenVerifier(),
@@ -148,8 +151,15 @@ func (a *App) initMetricsServer(_ context.Context) error {
 	mux := http.NewServeMux()
 	mux.Handle("/metrics", promhttp.Handler())
 
+	addr := config.AppConfig().Metrics.Address()
+	if prodguard.IsProduction(config.AppConfig().App.Env()) {
+		_, port, err := net.SplitHostPort(addr)
+		if err == nil {
+			addr = net.JoinHostPort("127.0.0.1", port)
+		}
+	}
 	a.metricsServer = &http.Server{
-		Addr:              config.AppConfig().Metrics.Address(),
+		Addr:              addr,
 		Handler:           mux,
 		ReadHeaderTimeout: 5 * time.Second,
 	}

@@ -103,6 +103,9 @@ func (c *config) ValidateProduction() error {
 	if len(c.HTTP.AllowedOrigins()) == 0 {
 		return fmt.Errorf("production: WS_ALLOWED_ORIGINS is required")
 	}
+	if c.HTTP.AllowQueryToken() {
+		return fmt.Errorf("production: WS_ALLOW_QUERY_TOKEN must be false")
+	}
 	if err := prodguard.ForbidLocalhostURL("PUBLIC_WS_URL", c.Instance.PublicWSURL()); err != nil {
 		return err
 	}

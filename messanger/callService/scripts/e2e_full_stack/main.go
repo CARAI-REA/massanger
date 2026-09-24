@@ -11,6 +11,7 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/gorilla/websocket"
+	"github.com/pion/webrtc/v4"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
@@ -132,11 +133,19 @@ func main() {
 		panic("sfu expected welcome, got " + fw.Type)
 	}
 	var sfuWelcome struct {
-		Role string `json:"role"`
+		Role       string `json:"role"`
+		ICEServers []struct {
+			URLs       []string `json:"urls"`
+			Username   string   `json:"username"`
+			Credential string   `json:"credential"`
+		} `json:"ice_servers"`
 	}
 	must(json.Unmarshal(fw.Payload, &sfuWelcome))
 	if sfuWelcome.Role != "sfu" {
 		panic("sfu welcome.role != sfu")
+	}
+	if len(sfuWelcome.ICEServers) == 0 {
+		panic("sfu welcome.ice_servers empty")
 	}
 
 	fb := mustWS(sfuWS, roomUUID, peerJoin)
@@ -152,6 +161,10 @@ func main() {
 		panic("sfu pong")
 	}
 	fmt.Println("OK sfu")
+
+	step("4b. SFU: client offer → answer")
+	mustSFUOfferAnswer(fa)
+	fmt.Println("OK sfu offer/answer")
 
 	step("5. EndRoom → ROOM_CLOSED on Signaling + SFU")
 	_, err = client.EndRoom(authCtx, &roomsV1.EndRoomRequest{RoomUuid: roomUUID, OwnerUuid: owner})
@@ -191,6 +204,45 @@ func waitRoomClosed(c *websocket.Conn, timeout time.Duration) bool {
 		}
 	}
 	return false
+}
+
+func mustSFUOfferAnswer(c *websocket.Conn) {
+	pc, err := webrtc.NewPeerConnection(webrtc.Configuration{})
+	must(err)
+	defer pc.Close()
+	_, err = pc.AddTransceiverFromKind(webrtc.RTPCodecTypeAudio, webrtc.RTPTransceiverInit{
+		Direction: webrtc.RTPTransceiverDirectionSendrecv,
+	})
+	must(err)
+	offer, err := pc.CreateOffer(nil)
+	must(err)
+	must(pc.SetLocalDescription(offer))
+	offer = *pc.LocalDescription()
+	payload, err := json.Marshal(map[string]string{"sdp": offer.SDP})
+	must(err)
+	must(c.WriteJSON(envelope{Type: "offer", Payload: payload}))
+
+	deadline := time.Now().Add(8 * time.Second)
+	for time.Now().Before(deadline) {
+		msg := mustRead(c, time.Until(deadline))
+		switch msg.Type {
+		case "answer":
+			var p struct {
+				SDP string `json:"sdp"`
+			}
+			must(json.Unmarshal(msg.Payload, &p))
+			if p.SDP == "" {
+				panic("empty answer sdp")
+			}
+			must(pc.SetRemoteDescription(webrtc.SessionDescription{Type: webrtc.SDPTypeAnswer, SDP: p.SDP}))
+			return
+		case "ice_candidate", "peer_joined", "peer_left":
+			continue
+		case "error":
+			panic("sfu error during offer/answer: " + string(msg.Payload))
+		}
+	}
+	panic("timeout waiting for sfu answer")
 }
 
 func mustHealth(u string) {

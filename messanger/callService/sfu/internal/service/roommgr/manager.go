@@ -12,6 +12,8 @@ import (
 
 	"github.com/pion/rtcp"
 	"github.com/pion/webrtc/v4"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
 
 	"sfu/internal/converter"
 	"sfu/internal/metrics"
@@ -19,6 +21,8 @@ import (
 	"sfu/internal/service"
 	webrtcapi "sfu/internal/webrtc"
 )
+
+var tracer = otel.Tracer("sfu/roommgr")
 
 type Options struct {
 	SimulcastEnabled bool
@@ -50,8 +54,9 @@ type Manager struct {
 	iceServers []model.ICEServer
 	opts       Options
 
-	mu    sync.RWMutex
-	rooms map[string]map[string]*Peer // room -> user -> peer
+	mu            sync.RWMutex
+	rooms         map[string]map[string]*Peer // room -> user -> peer
+	roomRecording map[string]bool             // room -> recording_enabled from rooms service
 }
 
 func NewManager(factory *webrtcapi.Factory, clientICE []webrtcapi.ICEServer, opts Options) *Manager {
@@ -76,14 +81,41 @@ func NewManager(factory *webrtcapi.Factory, clientICE []webrtcapi.ICEServer, opt
 		opts.RecordingDir = "./recordings"
 	}
 	return &Manager{
-		factory:    factory,
-		iceServers: servers,
-		opts:       opts,
-		rooms:      make(map[string]map[string]*Peer),
+		factory:       factory,
+		iceServers:    servers,
+		opts:          opts,
+		rooms:         make(map[string]map[string]*Peer),
+		roomRecording: make(map[string]bool),
 	}
 }
 
 func (m *Manager) ICEServers() []model.ICEServer { return m.iceServers }
+
+func (m *Manager) SetRoomRecording(roomUUID string, enabled bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if enabled {
+		m.roomRecording[roomUUID] = true
+	} else {
+		delete(m.roomRecording, roomUUID)
+	}
+}
+
+func (m *Manager) recordingEnabledFor(roomUUID string) bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.opts.RecordingEnabled || m.roomRecording[roomUUID]
+}
+
+func (m *Manager) LocalPeerCount() int {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	n := 0
+	for _, peers := range m.rooms {
+		n += len(peers)
+	}
+	return n
+}
 
 func (m *Manager) RoomUUIDs() []string {
 	m.mu.RLock()
@@ -282,7 +314,7 @@ func (m *Manager) onTrack(ctx context.Context, roomUUID, publisherUUID string, r
 
 	go func() {
 		var recFile *os.File
-		if m.opts.RecordingEnabled {
+		if m.recordingEnabledFor(roomUUID) {
 			recFile = m.openRecordingFile(roomUUID, remote)
 		}
 		defer func() {
@@ -462,6 +494,9 @@ func (m *Manager) negotiate(roomUUID string, p *Peer) {
 		return
 	}
 	p.negotiationNeeded = false
+	_, span := tracer.Start(context.Background(), "roommgr.negotiate")
+	span.SetAttributes(attribute.String("room_uuid", roomUUID))
+	span.End()
 	_ = p.Conn.Send(context.Background(), model.Envelope{
 		Type:     model.TypeOffer,
 		RoomUUID: roomUUID,

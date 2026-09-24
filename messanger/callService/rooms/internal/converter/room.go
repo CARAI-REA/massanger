@@ -310,8 +310,9 @@ func AssertCanJoinRequestToModel(info *roomsV1.AssertCanJoinRequest) model.Asser
 
 func AssertCanJoinResponseToProto(info model.AssertCanJoinResponse) *roomsV1.AssertCanJoinResponse {
 	return &roomsV1.AssertCanJoinResponse{
-		Ok:         info.Ok,
-		RoomStatus: info.RoomStatus,
+		Ok:               info.Ok,
+		RoomStatus:       info.RoomStatus,
+		RecordingEnabled: info.RecordingEnabled,
 	}
 }
 

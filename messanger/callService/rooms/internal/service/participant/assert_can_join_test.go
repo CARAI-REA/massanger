@@ -13,7 +13,11 @@ func (s *ServiceSuite) TestAssertCanJoinActiveParticipant() {
 	userUUID := gofakeit.UUID()
 
 	s.roomRepository.On("GetRoom", mock.Anything, model.GetRoomRequest{RoomUUID: roomUUID}).
-		Return(model.GetRoomResponse{Room: model.Room{RoomUUID: roomUUID, Status: "active"}}, nil)
+		Return(model.GetRoomResponse{Room: model.Room{
+			RoomUUID: roomUUID,
+			Status:   "active",
+			RoomSettings: model.RoomSettings{RecordingEnabled: true},
+		}}, nil)
 	s.participantRepository.On("IsParticipant", mock.Anything, model.IsParticipantRequest{
 		RoomUUID: roomUUID,
 		UserUUID: userUUID,
@@ -26,6 +30,7 @@ func (s *ServiceSuite) TestAssertCanJoinActiveParticipant() {
 	s.Require().NoError(err)
 	s.True(resp.Ok)
 	s.Equal("active", resp.RoomStatus)
+	s.True(resp.RecordingEnabled)
 }
 
 func (s *ServiceSuite) TestAssertCanJoinInactiveRoom() {

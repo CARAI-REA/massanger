@@ -60,7 +60,7 @@ func newSvc(t *testing.T) *session.Service {
 	})
 	require.NoError(t, err)
 	mgr := roommgr.NewManager(f, nil, roommgr.Options{})
-	return session.New(mgr, affinity.NewNoop(), room.NewNoop(), "inst-1", "ws://localhost:8082/v1/ws", 30*time.Second, false)
+	return session.New(mgr, affinity.NewNoop(), room.NewNoop(), "inst-1", "ws://localhost:8082/v1/ws", 30*time.Second, false, false)
 }
 
 func TestConnectWelcome(t *testing.T) {
@@ -74,6 +74,55 @@ func TestConnectWelcome(t *testing.T) {
 	require.NoError(t, json.Unmarshal(msgs[0].Payload, &w))
 	require.Equal(t, "user-a", w.SelfUserUUID)
 	require.Equal(t, "sfu", w.Role)
+}
+
+type turnMockClient struct {
+	servers []model.ICEServer
+}
+
+func (m *turnMockClient) AssertCanJoin(context.Context, string, string) (room.JoinCheck, error) {
+	return room.JoinCheck{OK: true, RecordingEnabled: true}, nil
+}
+
+func (m *turnMockClient) GetTURNCredentials(context.Context, string, string) ([]model.ICEServer, error) {
+	return m.servers, nil
+}
+
+func TestConnectWelcomeEphemeralTURN(t *testing.T) {
+	f, err := webrtcapi.NewFactory(webrtcapi.Config{
+		ICEServers: []webrtcapi.ICEServer{{URLs: []string{"stun:stun.l.google.com:19302"}}},
+	})
+	require.NoError(t, err)
+	mgr := roommgr.NewManager(f, []webrtcapi.ICEServer{
+		{URLs: []string{"stun:stun.l.google.com:19302"}},
+		{URLs: []string{"turn:turn.example:3478"}, Username: "static", Credential: "static"},
+	}, roommgr.Options{})
+	mock := &turnMockClient{servers: []model.ICEServer{{
+		URLs:       []string{"turn:turn.example:3478?transport=udp"},
+		Username:   "12345:user-a",
+		Credential: "ephemeral-hmac",
+	}}}
+	svc := session.New(mgr, affinity.NewNoop(), mock, "inst-1", "ws://localhost:8082/v1/ws", 30*time.Second, true, true)
+	a := &memConn{}
+	require.NoError(t, svc.Connect(context.Background(), a, "room", "user-a"))
+	var w model.WelcomePayload
+	require.NoError(t, json.Unmarshal(a.Messages()[0].Payload, &w))
+	require.NotEmpty(t, w.ICEServers)
+	found := false
+	for _, s := range w.ICEServers {
+		if s.Username == "12345:user-a" && s.Credential == "ephemeral-hmac" {
+			found = true
+		}
+		require.NotEqual(t, "static", s.Username)
+	}
+	require.True(t, found)
+}
+
+func TestConnectRejectsWhenDraining(t *testing.T) {
+	svc := newSvc(t)
+	svc.BeginDrain()
+	a := &memConn{}
+	require.ErrorIs(t, svc.Connect(context.Background(), a, "room", "user-a"), model.ErrInstanceDraining)
 }
 
 func TestPeerJoined(t *testing.T) {

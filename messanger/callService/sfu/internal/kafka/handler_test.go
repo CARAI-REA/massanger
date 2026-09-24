@@ -47,6 +47,9 @@ func (f *fakeSessions) CloseUser(_ context.Context, roomUUID, userUUID string) e
 	f.closedUser.user = userUUID
 	return nil
 }
+func (f *fakeSessions) BeginDrain()              {}
+func (f *fakeSessions) IsDraining() bool         { return false }
+func (f *fakeSessions) WaitEmpty(context.Context) error { return nil }
 
 func fixture(t *testing.T, name string) []byte {
 	t.Helper()

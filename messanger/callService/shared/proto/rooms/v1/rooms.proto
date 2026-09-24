@@ -256,6 +256,7 @@ message AssertCanJoinRequest {
 message AssertCanJoinResponse {
     bool ok = 1;
     string room_status = 2;
+    bool recording_enabled = 3; // room setting; SFU uses for per-room RTP dump
 }
 
 // RefreshJoinTokenRequest asks for a new join JWT for an active participant.

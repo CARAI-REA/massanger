@@ -27,7 +27,8 @@ func (s *service) AssertCanJoin(ctx context.Context, req model.AssertCanJoinRequ
 	status := roomRes.Room.Status
 	ok := status == "active" && partRes.IsActive
 	return model.AssertCanJoinResponse{
-		Ok:         ok,
-		RoomStatus: status,
+		Ok:               ok,
+		RoomStatus:       status,
+		RecordingEnabled: roomRes.Room.RoomSettings.RecordingEnabled,
 	}, nil
 }

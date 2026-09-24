@@ -2,6 +2,7 @@ package jwt
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -43,6 +44,9 @@ func (v *JoinJWTVerifier) VerifyJoinToken(ctx context.Context, tokenStr string) 
 		},
 	)
 	if err != nil {
+		if errors.Is(err, jwt.ErrTokenExpired) {
+			return nil, fmt.Errorf("%w: %v", tokens.ErrTokenExpired, err)
+		}
 		return nil, fmt.Errorf("invalid join token: %w", err)
 	}
 
@@ -56,7 +60,7 @@ func (v *JoinJWTVerifier) VerifyJoinToken(ctx context.Context, tokenStr string) 
 	}
 
 	if claims.ExpiresAt != nil && time.Now().After(claims.ExpiresAt.Time) {
-		return nil, fmt.Errorf("token has expired")
+		return nil, tokens.ErrTokenExpired
 	}
 
 	return claims, nil
