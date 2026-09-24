@@ -1,9 +1,14 @@
 # Local env and secrets — never commit
 .env
 **/.env
+.env.production
+**/.env.production
 !**/.env.template
+!**/.env.production.example
 !deploy/env/.env.template
+!deploy/env/.env.production.example
 deploy/compose/**/.env
+deploy/k8s/*secrets.local.yaml
 
 # Binaries / build
 bin/

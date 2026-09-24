@@ -191,7 +191,11 @@ func waitRoomClosed(c *websocket.Conn, timeout time.Duration) bool {
 		_ = c.SetReadDeadline(time.Now().Add(time.Second))
 		msg, err := readOne(c)
 		if err != nil {
-			return false
+			// Ignore read deadlines; abort only on hard close before ROOM_CLOSED.
+			if websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway) {
+				return false
+			}
+			continue
 		}
 		if msg.Type == "error" {
 			var p struct {

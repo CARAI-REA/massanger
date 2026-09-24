@@ -1,0 +1,106 @@
+# Optional local/dev infra for callService (NOT a production HA cluster).
+# Production: use managed Postgres / Redis / Kafka (RF>=3) and point Services via DNS.
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: callservice
+spec:
+  selector:
+    app: postgres
+  ports:
+    - port: 5432
+      targetPort: 5432
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+  namespace: callservice
+spec:
+  serviceName: postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:17.0-alpine3.20
+          ports:
+            - containerPort: 5432
+          env:
+            - name: POSTGRES_USER
+              value: rooms_user
+            - name: POSTGRES_DB
+              value: rooms
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: callservice-secrets
+                  key: POSTGRES_PASSWORD
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "rooms_user", "-d", "rooms"]
+            initialDelaySeconds: 5
+            periodSeconds: 10
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 10Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis
+  namespace: callservice
+spec:
+  selector:
+    app: redis
+  ports:
+    - port: 6379
+      targetPort: 6379
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis
+  namespace: callservice
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redis
+  template:
+    metadata:
+      labels:
+        app: redis
+    spec:
+      containers:
+        - name: redis
+          image: redis:7.2.5-alpine3.20
+          args: ["redis-server", "--requirepass", "$(REDIS_PASSWORD)"]
+          env:
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: callservice-secrets
+                  key: REDIS_PASSWORD
+          ports:
+            - containerPort: 6379
+          readinessProbe:
+            exec:
+              command: ["redis-cli", "-a", "$(REDIS_PASSWORD)", "ping"]
+            initialDelaySeconds: 5
+            periodSeconds: 10
